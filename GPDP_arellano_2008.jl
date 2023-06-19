@@ -28,7 +28,9 @@ const σy = .025 # Output shock volatility
 const ρy = .945 # Output persistence
 const σy_uncond = σy/sqrt(1-ρy^2)
 
-const ythresh = 0.969 # Default cost parameter
+# Default cost parameters: Smooth quadratic cost
+# that approximates threshold structure of 
+# Arellano (2008)
 
 const y_const = -.16
 const y_curv = .2
