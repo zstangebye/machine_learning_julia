@@ -28,10 +28,8 @@ NEW FUNCTIONS
 CHANGES IN VFI
 1) Add the update step for your function G in the VFI loop wherever it belongs. Follow the examples in the code for either new_q or whatever is nearest your application.
 2) Store logit-transformed values in tset_Gz for all input points
-3) Clean tset_Gz by de-meaning/standardizing it using G_mean and G_std to create tset_G. Again, follow the template already there 
-4) Optimize the likelihood (negLL_G) of tset_G over the log-10 kernel parameters. This is done in a loop over all starting points with finite likelihoods. Again, follow the template for some other function, e.g., negLL_q
-5) Use the optimal kernel parameters (G_kernCoeff) to create the covariance matrix K_G
-6) Use the matrix K_G to create the GPR coefficients (G_gprCoeff). Once this is done, the function G() will be automatically updated and may be called from anywhere in the code, especially in the next loop.
+3) Clean tset_Gz by calling cleanData(tset_Gz). Again, follow the template already there for output determination
+4) Train the GP for your function by calling train_GP(negLL_G,tset_G,dimensionsG). Follow the template already there for output orders. Once this is done, the function G() will be automatically updated and may be called from anywhere in the code, especially in the next loop.
 
 
 TO ADD DIMENSIONS/STATES
