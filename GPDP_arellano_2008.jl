@@ -28,7 +28,7 @@ const σy = .025 # Output shock volatility
 const ρy = .945 # Output persistence
 const σy_uncond = σy/sqrt(1-ρy^2)
 
-# Default cost parameters: Smooth quadratic cost
+# Default cost parameters: Quadratic cost
 # that approximates threshold structure of 
 # Arellano (2008)
 
@@ -262,6 +262,11 @@ VD_kernCoeff = ones(2)
 q_kernCoeff = ones(2)
 A_kernCoeff = ones(2)
 
+K_q = createK(q_kernCoeff,2)
+K_VR = createK(VR_kernCoeff,2)
+K_VD = createK(VD_kernCoeff,1)
+K_A = createK(A_kernCoeff,2)
+
 # These store the GPR coefficients for the approximation 
 VR_gprCoeff = zeros(N_inputs)
 VD_gprCoeff = zeros(N_inputs)
@@ -387,6 +392,38 @@ function new_VD(current_y)
 
 end
 
+# This function cleans a set of raw output data handed to it ("tsetz").
+# It returns the cleaned data ("tset") as well as the mean ("mmean") and
+# volaility ("sstd"), which are used in the function call of the GP
+function cleanData(tsetz)
+
+    mmean = sum(tsetz)/N_inputs
+    sstd = sqrt( sum((tsetz .- mmean).^2.0)/(N_inputs-1.0) )
+    if (sstd < 1.0e-6) 
+        sstd = 1.0 
+    end
+    tset = (tsetz .- mmean)./sstd
+
+    return tset, mmean, sstd
+end
+
+# This function trains a given Gaussian process with likelihood function
+# "LLfunction" and outputs "ttset" and dimensionality "nndims".
+# It returns the optimized kernel coefficients, covariance matrix, and 
+# GPR coefficients
+function train_GP(LLfunction,ttset,nndims)
+
+    rresults = optimize(LLfunction,init_kernCoeff,NelderMead())
+
+    opt_params = rresults.minimizer 
+
+    kkernCoeff = 10.0.^opt_params
+    KK = createK(kkernCoeff,nndims)
+    ggprCoeff = (KK .+ sn_star^2.0 .*eyeN)\ttset
+
+    return kkernCoeff, KK, ggprCoeff
+end
+
 # Now we can begin the VFI operating as the limit of a finie-horizon game 
 
 v_old_points = zeros(N_validate)
@@ -414,22 +451,9 @@ while ( (ddist > conv_tol) && (iiters < max_iters))
             tset_qz[i] = -log((qH-qL)/(1.0e-6-qL) - 1.0)
         end  
     end
-    # Now we `clean' the outputs before running the GPR 
-    global mean_q = sum(tset_qz)/N_inputs
-    global std_q = sqrt( sum((tset_qz .- mean_q).^2.0)/(N_inputs-1.0) )
-    if (std_q < 1.0e-6) 
-        global std_q = 1.0 
-    end
-    global tset_q = (tset_qz .- mean_q)./std_q
-
-    global rresultsq = optimize(negLL_q,init_kernCoeff,NelderMead())
-
-    global opt_paramsq = rresultsq.minimizer 
-    global opt_LLq = -rresultsq.minimum
-
-    global q_kernCoeff = 10.0.^opt_paramsq
-    global K_q = createK(q_kernCoeff,2)
-    global q_gprCoeff = (K_q .+ sn_star^2.0 .*eyeN)\tset_q
+    # Now we `clean' the outputs and train the GP
+    global tset_q, mean_q, std_q = cleanData(tset_qz)
+    global q_kernCoeff, K_q, q_gprCoeff = train_GP(negLL_q,tset_q,2)
 
 
      # Now, we update value and policy functions
@@ -476,58 +500,15 @@ while ( (ddist > conv_tol) && (iiters < max_iters))
         tset_VDz[i] = -log((VH-VL)/(vdnew-VL) - 1.0)
 
     end
-    # Now we `clean' the outputs before running the GPR 
-    global mean_VR = sum(tset_VRz)/N_inputs
-    global std_VR = sqrt( sum((tset_VRz .- mean_VR).^2.0)/(N_inputs-1.0) )
-    if (std_VR < 1.0e-6) 
-        global std_VR = 1.0 
-    end
-    global tset_VR = (tset_VRz .- mean_VR)./std_VR
+    # Now we `clean' the outputs and train the GP
+    global tset_VR, mean_VR, std_VR = cleanData(tset_VRz)
+    global tset_VD, mean_VD, std_VD = cleanData(tset_VDz)
+    global tset_A, mean_A, std_A = cleanData(tset_Az)
 
-    global mean_VD = sum(tset_VDz)/N_inputs
-    global std_VD = sqrt( sum((tset_VDz .- mean_VD).^2.0)/(N_inputs-1.0) )
-    if (std_VD < 1.0e-6) 
-        global std_VD = 1.0 
-    end
-    global tset_VD = (tset_VDz .- mean_VD)./std_VD
-
-    global mean_A = sum(tset_Az)/N_inputs
-    global std_A = sqrt( sum((tset_Az .- mean_A).^2.0)/(N_inputs-1.0) )
-    if (std_A < 1.0e-6) 
-        global std_A = 1.0 
-    end
-    global tset_A = (tset_Az .- mean_A)./std_A
-
-    # Now, we optimize all the GP likelihoods and get the new functions
-    global rresultsVR = optimize(negLL_VR,init_kernCoeff,NelderMead())
-
-    global opt_paramsVR = rresultsVR.minimizer 
-    global opt_LLVR = -rresultsVR.minimum
-
-    global VR_kernCoeff = 10.0.^opt_paramsVR
-    global K_VR = createK(VR_kernCoeff,2)
-    global VR_gprCoeff = (K_VR .+ sn_star^2.0 .*eyeN)\tset_VR
-
-
-    global rresultsVD = optimize(negLL_VD,init_kernCoeff,NelderMead())
-
-    global opt_paramsVD = rresultsVD.minimizer 
-    global opt_LLVD = -rresultsVD.minimum
-
-    global VD_kernCoeff = 10.0.^opt_paramsVD
-    global K_VD = createK(VD_kernCoeff,1)
-    global VD_gprCoeff = (K_VD .+ sn_star^2.0 .*eyeN)\tset_VD
-
-
-    global rresultsA = optimize(negLL_A,init_kernCoeff,NelderMead())
-
-    global opt_paramsA = rresultsA.minimizer 
-    global opt_LLA = -rresultsA.minimum
-
-    global A_kernCoeff = 10.0.^opt_paramsA
-    global K_A = createK(A_kernCoeff,2)
-    global A_gprCoeff = (K_A .+ sn_star^2.0 .*eyeN)\tset_A
-
+    # Training
+    global VR_kernCoeff, K_VR, VR_gprCoeff = train_GP(negLL_VR,tset_VR,2)
+    global VD_kernCoeff, K_VD, VD_gprCoeff = train_GP(negLL_VD,tset_VD,1)
+    global A_kernCoeff, K_A, A_gprCoeff = train_GP(negLL_A,tset_A,2)
 
     # Now update the value function and check for convergence
     for i=1:N_validate 
