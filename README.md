@@ -1,9 +1,9 @@
 # machine_learning_julia
-Solution code for Arellano (2008) using the GPR-VFI method of Gu and Stangebye (2022). The algorithm is a Gaussian-Process Dynamic Programming solution in the vein of Scheidigger and Bilionis (2019). Significant alterations are made to improve performance for non-linear sovereign default models. See Appendix A in Gu and Stangebye (2022) for the relevant changes.
+Solution code for Arellano (2008) using the GPR-VFI method of Gu and Stangebye (2023). The algorithm is a Gaussian-Process Dynamic Programming solution in the vein of Scheidigger and Bilionis (2019). Significant alterations are made to improve performance for non-linear sovereign default models. See Appendix A in Gu and Stangebye (2023) for the relevant changes.
 
 The code is designed with a modular structure to facilitate its translation to other dynamic non-linear models. The solution uses the mode of Gaussian Processes to approximate endogenous functions, such as value, price, and policy functions. To adapt the code for other purposes, proceed as follows.
 
-This example is not parallelized for clarity but it can easily be made so both in the evaluation of the training inputs and the optimization of the GP likelihood. See the solution to Gu and Stangebye (2022) for details. 
+This example is not parallelized for clarity but it can easily be made so both in the evaluation of the training inputs and the optimization of the GP likelihood. See the solution to Gu and Stangebye (2023) for details. 
 
 TO CREATE A NEW FUNCTION in this vein (let's call it function G), proceed as follows:
 
