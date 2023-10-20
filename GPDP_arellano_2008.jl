@@ -3,7 +3,7 @@
 # Zach Stangebye
 # Lecture 5: Machine Learning Example
 
-# We'll solve the Arellano (2008) model using the Gu and Stangebye (2022) method 
+# We'll solve the Arellano (2008) model using the Gu and Stangebye (2023) method 
 # for GPR-VFI
 
 const max_iters = 600
@@ -28,12 +28,11 @@ const σy = .025 # Output shock volatility
 const ρy = .945 # Output persistence
 const σy_uncond = σy/sqrt(1-ρy^2)
 
-# Default cost parameters: Quadratic cost
-# that approximates threshold structure of 
-# Arellano (2008)
+# const ythresh = 0.969 # Default cost parameter
 
-const y_const = -.16
-const y_curv = .2
+# Approximately generates threshold-cost specification of Arellano (2008)
+const y_const = -.5 
+const y_curv = .53 
 ydef(y) = y - max(0.0,y_const*y + y_curv*y^2)
 
 const π_re_enter = .282 # Re-entry probability
@@ -47,7 +46,7 @@ const yL = exp(-stds_out*σy_uncond)
 const yH = exp(stds_out*σy_uncond)
 
 const bLopt = 0
-const bHopt = 0.4
+const bHopt = 0.3 
 
 const bL = bLopt-1.0e-6
 const bH = bHopt+1.0e-6
@@ -55,14 +54,14 @@ const bH = bHopt+1.0e-6
 const qL = 0.0
 const qH = 1/(1+r)
 
-const VL = -100.0
+const VL = -50.0 #-100.0
 const VH = -1.0e-6
 
 const bN_opt = 50
 const b_opt_grid = bLopt:(bHopt-bLopt)/(bN_opt-1):bHopt
 
 # ML parameters
-const N_inputs = 40*D
+const N_inputs = 30*D #
 # Scheidigger and Bilionis (2019) suggest 5*D or 10*D for N_inputs, but we
 # find this to be insufficient given the significan non-linearities in these models
 # However, the golden feature that the problem is linear in D remains
@@ -96,7 +95,7 @@ const eyeN = copy(eyeN1)
 # We start by drawing inputs/gridpoints (fixed for all iterations) from typical sets 
 const typ_thresh = 1.0e-6 
 const b_thresh = .75*bHopt-bLopt 
-const N_thresh = 20*D
+const N_thresh = 10*D
 
 gridPointsTemp = zeros(2,N_inputs)
 gridPointsTempVec = zeros(1,N_inputs)
@@ -262,11 +261,6 @@ VD_kernCoeff = ones(2)
 q_kernCoeff = ones(2)
 A_kernCoeff = ones(2)
 
-K_q = createK(q_kernCoeff,2)
-K_VR = createK(VR_kernCoeff,2)
-K_VD = createK(VD_kernCoeff,1)
-K_A = createK(A_kernCoeff,2)
-
 # These store the GPR coefficients for the approximation 
 VR_gprCoeff = zeros(N_inputs)
 VD_gprCoeff = zeros(N_inputs)
@@ -392,38 +386,6 @@ function new_VD(current_y)
 
 end
 
-# This function cleans a set of raw output data handed to it ("tsetz").
-# It returns the cleaned data ("tset") as well as the mean ("mmean") and
-# volaility ("sstd"), which are used in the function call of the GP
-function cleanData(tsetz)
-
-    mmean = sum(tsetz)/N_inputs
-    sstd = sqrt( sum((tsetz .- mmean).^2.0)/(N_inputs-1.0) )
-    if (sstd < 1.0e-6) 
-        sstd = 1.0 
-    end
-    tset = (tsetz .- mmean)./sstd
-
-    return tset, mmean, sstd
-end
-
-# This function trains a given Gaussian process with likelihood function
-# "LLfunction" and outputs "ttset" and dimensionality "nndims".
-# It returns the optimized kernel coefficients, covariance matrix, and 
-# GPR coefficients
-function train_GP(LLfunction,ttset,nndims)
-
-    rresults = optimize(LLfunction,init_kernCoeff,NelderMead())
-
-    opt_params = rresults.minimizer 
-
-    kkernCoeff = 10.0.^opt_params
-    KK = createK(kkernCoeff,nndims)
-    ggprCoeff = (KK .+ sn_star^2.0 .*eyeN)\ttset
-
-    return kkernCoeff, KK, ggprCoeff
-end
-
 # Now we can begin the VFI operating as the limit of a finie-horizon game 
 
 v_old_points = zeros(N_validate)
@@ -431,6 +393,7 @@ v_new_points = zeros(N_validate)
 const conv_tol = 1.0e-6 
 ddist = 1.0
 iiters = 0 
+sstart0 = time()
 while ( (ddist > conv_tol) && (iiters < max_iters)) 
 
     global iiters += 1
@@ -451,9 +414,22 @@ while ( (ddist > conv_tol) && (iiters < max_iters))
             tset_qz[i] = -log((qH-qL)/(1.0e-6-qL) - 1.0)
         end  
     end
-    # Now we `clean' the outputs and train the GP
-    global tset_q, mean_q, std_q = cleanData(tset_qz)
-    global q_kernCoeff, K_q, q_gprCoeff = train_GP(negLL_q,tset_q,2)
+    # Now we `clean' the outputs before running the GPR 
+    global mean_q = sum(tset_qz)/N_inputs
+    global std_q = sqrt( sum((tset_qz .- mean_q).^2.0)/(N_inputs-1.0) )
+    if (std_q < 1.0e-6) 
+        global std_q = 1.0 
+    end
+    global tset_q = (tset_qz .- mean_q)./std_q
+
+    global rresultsq = optimize(negLL_q,init_kernCoeff,NelderMead())
+
+    global opt_paramsq = rresultsq.minimizer 
+    global opt_LLq = -rresultsq.minimum
+
+    global q_kernCoeff = 10.0.^opt_paramsq
+    global K_q = createK(q_kernCoeff,2)
+    global q_gprCoeff = (K_q .+ sn_star^2.0 .*eyeN)\tset_q
 
 
      # Now, we update value and policy functions
@@ -500,15 +476,58 @@ while ( (ddist > conv_tol) && (iiters < max_iters))
         tset_VDz[i] = -log((VH-VL)/(vdnew-VL) - 1.0)
 
     end
-    # Now we `clean' the outputs and train the GP
-    global tset_VR, mean_VR, std_VR = cleanData(tset_VRz)
-    global tset_VD, mean_VD, std_VD = cleanData(tset_VDz)
-    global tset_A, mean_A, std_A = cleanData(tset_Az)
+    # Now we `clean' the outputs before running the GPR 
+    global mean_VR = sum(tset_VRz)/N_inputs
+    global std_VR = sqrt( sum((tset_VRz .- mean_VR).^2.0)/(N_inputs-1.0) )
+    if (std_VR < 1.0e-6) 
+        global std_VR = 1.0 
+    end
+    global tset_VR = (tset_VRz .- mean_VR)./std_VR
 
-    # Training
-    global VR_kernCoeff, K_VR, VR_gprCoeff = train_GP(negLL_VR,tset_VR,2)
-    global VD_kernCoeff, K_VD, VD_gprCoeff = train_GP(negLL_VD,tset_VD,1)
-    global A_kernCoeff, K_A, A_gprCoeff = train_GP(negLL_A,tset_A,2)
+    global mean_VD = sum(tset_VDz)/N_inputs
+    global std_VD = sqrt( sum((tset_VDz .- mean_VD).^2.0)/(N_inputs-1.0) )
+    if (std_VD < 1.0e-6) 
+        global std_VD = 1.0 
+    end
+    global tset_VD = (tset_VDz .- mean_VD)./std_VD
+
+    global mean_A = sum(tset_Az)/N_inputs
+    global std_A = sqrt( sum((tset_Az .- mean_A).^2.0)/(N_inputs-1.0) )
+    if (std_A < 1.0e-6) 
+        global std_A = 1.0 
+    end
+    global tset_A = (tset_Az .- mean_A)./std_A
+
+    # Now, we optimize all the GP likelihoods and get the new functions
+    global rresultsVR = optimize(negLL_VR,init_kernCoeff,NelderMead())
+
+    global opt_paramsVR = rresultsVR.minimizer 
+    global opt_LLVR = -rresultsVR.minimum
+
+    global VR_kernCoeff = 10.0.^opt_paramsVR
+    global K_VR = createK(VR_kernCoeff,2)
+    global VR_gprCoeff = (K_VR .+ sn_star^2.0 .*eyeN)\tset_VR
+
+
+    global rresultsVD = optimize(negLL_VD,init_kernCoeff,NelderMead())
+
+    global opt_paramsVD = rresultsVD.minimizer 
+    global opt_LLVD = -rresultsVD.minimum
+
+    global VD_kernCoeff = 10.0.^opt_paramsVD
+    global K_VD = createK(VD_kernCoeff,1)
+    global VD_gprCoeff = (K_VD .+ sn_star^2.0 .*eyeN)\tset_VD
+
+
+    global rresultsA = optimize(negLL_A,init_kernCoeff,NelderMead())
+
+    global opt_paramsA = rresultsA.minimizer 
+    global opt_LLA = -rresultsA.minimum
+
+    global A_kernCoeff = 10.0.^opt_paramsA
+    global K_A = createK(A_kernCoeff,2)
+    global A_gprCoeff = (K_A .+ sn_star^2.0 .*eyeN)\tset_A
+
 
     # Now update the value function and check for convergence
     for i=1:N_validate 
@@ -517,6 +536,11 @@ while ( (ddist > conv_tol) && (iiters < max_iters))
     global ddist = maximum(abs.(v_new_points .- v_old_points))
     println([iiters ddist])
 end
+
+tot_time_mins_vfi = (time() - sstart0)/60.0
+
+# cd("/Users/zstangeb/Dropbox/AAA_CoursePrep/numerical_methods_class/lectures/machine_learning/code")
+
 
 # Plot the solved policy and pricing functions
 bN_plot = 500
@@ -532,29 +556,34 @@ for i=1:bN_plot
     A_plot[i] = Apol([1.0;b_plot_grid[i]])
     VD_plot[i] = vDefault(1.0)
 end
-plot(b_plot_grid,q_plot)
 
-plot(b_plot_grid,A_plot)
+b_grid = bL:.001:bH
+# b_grid = bL:.03:bH
+q_ss(b) = q([1.0, b])
+q_l(b) = q([0.9, b])
+q_h(b) = q([1.1, b])
+plot(b_grid,q_ss.(b_grid),label="SS Output",xlabel="Debt Issuance",ylabel="Price")
+plot!(b_grid,q_l.(b_grid),label="Low Output")
+plot!(b_grid,q_h.(b_grid),label="High Output")
 
-plot(b_plot_grid,VR_plot)
-plot!(b_plot_grid,VD_plot)
+savefig("pricing_functions_arellano_2008.pdf")
 
 
-y_plot_grid = yL:(yH-yL)/(bN_plot-1):yH
 
-q_ploty = zeros(bN_plot)
-VR_ploty = zeros(bN_plot)
-VD_ploty = zeros(bN_plot)
-A_ploty = zeros(bN_plot)
-for i=1:bN_plot 
-    q_ploty[i] = q([y_plot_grid[i];0.01])
-    VR_ploty[i] = vRepay([y_plot_grid[i];0.01])
-    A_ploty[i] = Apol([y_plot_grid[i];0.01])
-    VD_ploty[i] = vDefault(y_plot_grid[i])
-end
-plot(y_plot_grid,q_ploty)
+a_b_alone_h(b) = Apol([1.1, b])
+a_b_alone_l(b) = Apol([0.9, b])
+plot(b_grid,a_b_alone_h.(b_grid),label="High Output",ylabel="Debt Issuance",xlabel="Debt Stock")
+plot!(b_grid,a_b_alone_l.(b_grid),label="Low Output")
 
-plot(y_plot_grid,A_ploty)
+savefig("policy_functions_arellano_2008.pdf")
 
-plot(y_plot_grid,VR_ploty)
-plot!(y_plot_grid,VD_ploty)
+
+y_grid = yL:.001:yH
+btest = 0.2
+V_y_alone(y) = vRepay([y; btest])
+Vd_y_alone(y) = vDefault(y)
+
+plot(y_grid,V_y_alone.(y_grid),xlabel="Output",label="Repayment Value")
+plot!(y_grid,Vd_y_alone.(y_grid),label="Default Value")
+
+savefig("Value_functions_y_arellano_2008.pdf")
