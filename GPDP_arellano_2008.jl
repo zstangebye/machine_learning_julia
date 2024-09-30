@@ -105,7 +105,7 @@ for i=1:N_inputs
     gridPointsTempVec[i] = yL + (yH - yL)*(i-1.0)/(N_inputs-1.0)
 end 
 for i=1:N_thresh
-    gridPointsTemp[2,i] = bLopt + (b_thresh-bLopt)*(i-1.0)/(N_inputs-1.0)
+    gridPointsTemp[2,i] = bLopt + (b_thresh-bLopt)*(i-1.0)/(N_thresh-1.0)
 end 
 for i=N_thresh+1:N_inputs
     gridPointsTemp[2,i] = b_thresh + (bHopt-b_thresh)*(i-N_thresh-1)/(N_inputs-N_thresh-1)
